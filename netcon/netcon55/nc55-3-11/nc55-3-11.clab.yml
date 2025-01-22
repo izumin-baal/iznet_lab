@@ -1,0 +1,66 @@
+name: nc55-3-11
+prefix: ""
+
+topology:
+  kinds:
+    xrd:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}xrd-control-plane:24.2.2
+    ceos:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}ceos:4.31.5M-patch1
+    vr-n9kv:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}nxos9000v:10.4.4
+    crpd:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}crpd:23.2R1.13
+    linux:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}netshoot:latest
+  nodes:
+    RT-01:
+      kind: xrd
+      startup-config: config/RT-01.conf
+    RT-02:
+      kind: xrd
+      startup-config: config/RT-02.conf
+    RT-03:
+      kind: xrd
+      startup-config: config/RT-03.conf
+    RT-04:
+      kind: xrd
+      startup-config: config/RT-04.conf
+    RT-05:
+      kind: xrd
+      startup-config: config/RT-05.conf
+    RT-A:
+      kind: ceos
+      startup-config: config/RT-A.conf
+    RT-B:
+      kind: ceos
+      startup-config: config/RT-B.conf
+    SV-01:
+      kind: linux
+      exec:
+        - ip addr add 10.1.1.1/30 dev eth1
+        - ip route add 10.0.0.0/8 via 10.1.1.2
+        - ip route add 172.16.0.0/16 via 10.1.1.2
+        - ip route add 192.168.0.0/16 via 10.1.1.2
+    SV-02:
+      kind: linux
+      exec:
+        - ip addr add 10.2.2.1/30 dev eth1
+        - ip route add 10.0.0.0/8 via 10.2.2.2
+        - ip route add 172.16.0.0/16 via 10.2.2.2
+        - ip route add 192.168.0.0/16 via 10.2.2.2
+  links:
+    - endpoints: ["RT-A:eth1", "RT-01:Gi0-0-0-1"]
+    - endpoints: ["RT-A:eth2", "SV-01:eth1"]
+    - endpoints: ["RT-B:eth1", "RT-02:Gi0-0-0-1"]
+    - endpoints: ["RT-B:eth2", "SV-02:eth1"]
+    - endpoints: ["RT-01:Gi0-0-0-2", "RT-04:Gi0-0-0-4"]
+    - endpoints: ["RT-01:Gi0-0-0-3", "RT-02:Gi0-0-0-4"]
+    - endpoints: ["RT-01:Gi0-0-0-4", "RT-05:Gi0-0-0-2"]
+    - endpoints: ["RT-01:Gi0-0-0-5", "RT-03:Gi0-0-0-1"]
+    - endpoints: ["RT-02:Gi0-0-0-2", "RT-05:Gi0-0-0-4"]
+    - endpoints: ["RT-02:Gi0-0-0-3", "RT-03:Gi0-0-0-3"]
+    - endpoints: ["RT-02:Gi0-0-0-5", "RT-04:Gi0-0-0-1"]
+    - endpoints: ["RT-03:Gi0-0-0-2", "RT-04:Gi0-0-0-3"]
+    - endpoints: ["RT-03:Gi0-0-0-4", "RT-05:Gi0-0-0-1"]
+    - endpoints: ["RT-04:Gi0-0-0-2", "RT-05:Gi0-0-0-3"]

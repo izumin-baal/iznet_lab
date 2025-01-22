@@ -1,0 +1,99 @@
+name: nc55-3-1
+prefix: ""
+
+topology:
+  kinds:
+    xrd:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}xrd-control-plane:24.2.2
+    ceos:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}ceos:4.31.5M-patch1
+    vr-n9kv:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}nxos9000v:10.4.4
+    crpd:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}crpd:23.2R1.13
+    linux:
+      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}netshoot:latest
+  nodes:
+    RT-01:
+      kind: crpd
+      license: config/JNX_LICFEAT_CRPD_STANDARD-TRIAL
+      startup-config: config/RT-01.conf
+      exec:
+        - cli request system license add /config/license/license.lic
+    RT-02:
+      kind: crpd
+      license: config/JNX_LICFEAT_CRPD_STANDARD-TRIAL
+      startup-config: config/RT-02.conf
+      exec:
+        - cli request system license add /config/license/license.lic
+    RT-03:
+      kind: ceos
+      startup-config: config/RT-03.conf
+    RT-04:
+      kind: ceos
+      startup-config: config/RT-04.conf
+    RT-05:
+      kind: crpd
+      license: config/JNX_LICFEAT_CRPD_STANDARD-TRIAL
+      startup-config: config/RT-05.conf
+      exec:
+        - cli request system license add /config/license/license.lic
+    RT-06:
+      kind: crpd
+      license: config/JNX_LICFEAT_CRPD_STANDARD-TRIAL
+      startup-config: config/RT-06.conf
+      exec:
+        - cli request system license add /config/license/license.lic
+    RT-07:
+      kind: ceos
+      startup-config: config/RT-07.conf
+    RT-08:
+      kind: ceos
+      startup-config: config/RT-08.conf
+    RT-ISP:
+      kind: ceos
+      startup-config: config/RT-ISP.conf
+    SV-01:
+      kind: linux
+      exec:
+        - ip addr add 192.0.2.1/30 dev eth1
+        - ip route add 10.0.0.0/8 via 192.0.2.2
+        - ip route add 172.16.0.0/16 via 192.0.2.2
+        - ip route add 192.168.0.0/16 via 192.0.2.2
+        - ip route add 198.51.100.0/24 via 192.0.2.2
+        - ip route add 203.0.113.0/24 via 192.0.2.2
+    SV-02:
+      kind: linux
+      exec:
+        - ip addr add 203.0.113.1/30 dev eth1
+        - ip route add 10.0.0.0/8 via 203.0.113.2
+        - ip route add 172.16.0.0/16 via 203.0.113.2
+        - ip route add 192.168.0.0/16 via 203.0.113.2
+        - ip route add 198.51.100.0/24 via 203.0.113.2
+        - ip route add 192.0.2.0/24 via 203.0.113.2
+    SV-ISP:
+      kind: linux
+      exec:
+        - ip addr add 198.51.100.1/30 dev eth1
+        - ip route add 10.0.0.0/8 via 198.51.100.2
+        - ip route add 172.16.0.0/16 via 198.51.100.2
+        - ip route add 192.168.0.0/16 via 198.51.100.2
+        - ip route add 192.0.2.0/24 via 198.51.100.2
+        - ip route add 203.0.113.0/24 via 198.51.100.2
+  links:
+    - endpoints: ["RT-01:eth1", "RT-ISP:eth1"]
+    - endpoints: ["RT-02:eth1", "RT-ISP:eth2"]
+    - endpoints: ["RT-05:eth1", "RT-ISP:eth3"]
+    - endpoints: ["RT-06:eth1", "RT-ISP:eth4"]
+    - endpoints: ["RT-ISP:eth5", "SV-ISP:eth1"]
+    - endpoints: ["RT-01:eth2", "RT-02:eth2"]
+    - endpoints: ["RT-05:eth2", "RT-06:eth2"]
+    - endpoints: ["RT-01:eth3", "RT-03:eth1"]
+    - endpoints: ["RT-02:eth3", "RT-03:eth2"]
+    - endpoints: ["RT-05:eth3", "RT-07:eth1"]
+    - endpoints: ["RT-06:eth3", "RT-07:eth2"]
+    - endpoints: ["RT-03:eth3", "RT-07:eth3"]
+    - endpoints: ["RT-03:eth4", "RT-04:eth1"]
+    - endpoints: ["RT-07:eth4", "RT-08:eth1"]
+    - endpoints: ["RT-04:eth2", "SV-01:eth1"]
+    - endpoints: ["RT-08:eth2", "SV-02:eth1"]
