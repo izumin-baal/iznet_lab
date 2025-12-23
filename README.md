@@ -14,7 +14,7 @@ set +a
 3) 目的のラボを起動します。`sudo` を使うのが基本なので、`sudo -E` で環境変数を引き継ぎます。
 
 ```bash
-sudo -E containerlab deploy -t cisco/ios-xr/routing/basic/clab.yml
+sudo -E containerlab deploy -t cisco/ios-xr/routing/basic/iosxr-basic.clab.yml
 ```
 
 ## Bridge スクリプト（ホスト側）
@@ -34,14 +34,14 @@ sudo -E containerlab deploy -t cisco/ios-xr/routing/basic/clab.yml
 
 ```bash
 # clab.yml から bridge を抽出して作成
-./scripts/create-bridge.sh -f cisco/ios-xr/routing/basic/clab.yml
+./scripts/create-bridge.sh -f cisco/ios-xr/routing/basic/iosxr-basic.clab.yml
 
 # clab.yml から bridge を抽出して削除
-./scripts/delete-bridge.sh -f cisco/ios-xr/routing/basic/clab.yml
+./scripts/delete-bridge.sh -f cisco/ios-xr/routing/basic/iosxr-basic.clab.yml
 ```
 
 終了する場合は以下を実行してください。
 
 ```bash
-sudo -E containerlab destroy -t cisco/ios-xr/routing/basic/clab.yml
+sudo -E containerlab destroy -t cisco/ios-xr/routing/basic/iosxr-basic.clab.yml
 ```

@@ -1,4 +1,5 @@
 name: iosxr-basic
+prefix: ""
 
 # Set IOSXR_IMAGE in your environment (or .env) to use your own registry.
 # Example: IOSXR_IMAGE=registry.example.com/network-os/xrd:7.11.1
@@ -6,7 +7,7 @@ name: iosxr-basic
 topology:
   kinds:
     cisco_xrd:
-      image: ${IOSXR_IMAGE}
+      image: ${IOSXR_CP_IMAGE}
     linux:
       image: ${LINUX_IMAGE}
   nodes:
@@ -29,13 +30,13 @@ topology:
       exec:
         - ip addr add 192.168.1.1/24 dev eth1
         - ip link set eth1 up
-        - ip route add default via 192.168.1.254
+        - ip route replace default via 192.168.1.254
     host02:
       kind: linux
       exec:
         - ip addr add 192.168.2.1/24 dev eth1
         - ip link set eth1 up
-        - ip route add default via 192.168.2.254
+        - ip route replace default via 192.168.2.254
     bridge01:
       kind: bridge
   links:
