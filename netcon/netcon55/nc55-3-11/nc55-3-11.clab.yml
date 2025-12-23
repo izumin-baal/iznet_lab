@@ -4,15 +4,15 @@ prefix: ""
 topology:
   kinds:
     xrd:
-      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}xrd-control-plane:24.2.2
+      image: ${IOSXR_CP_IMAGE}
     ceos:
-      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}ceos:4.31.5M-patch1
+      image: ${CEOS_IMAGE}
     vr-n9kv:
-      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}nxos9000v:10.4.4
+      image: ${VR_N9KV_IMAGE}
     crpd:
-      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}crpd:23.2R1.13
+      image: ${CRPD_IMAGE}
     linux:
-      image: ${CONTAINERLAB_REPOSITORY:=vrnetlab/}netshoot:latest
+      image: ${LINUX_IMAGE}
   nodes:
     RT-01:
       kind: xrd

@@ -1,0 +1,16 @@
+name: iosxr-basic
+
+# Set IOSXR_IMAGE in your environment (or .env) to use your own registry.
+# Example: IOSXR_IMAGE=registry.example.com/network-os/xrd:7.11.1
+
+topology:
+  kinds:
+    cisco_xrd:
+      image: ${IOSXR_IMAGE}
+  nodes:
+    r1:
+      kind: cisco_xrd
+    r2:
+      kind: cisco_xrd
+  links:
+    - endpoints: ["r1:Gi0/0/0/0", "r2:Gi0/0/0/0"]
