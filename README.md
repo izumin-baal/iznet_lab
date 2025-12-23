@@ -17,13 +17,31 @@ set +a
 sudo -E containerlab deploy -t cisco/ios-xr/routing/basic/clab.yml
 ```
 
+## Bridge スクリプト（ホスト側）
+
+`scripts/create-bridge.sh` と `scripts/delete-bridge.sh` はブリッジ名を引数で受け取る汎用スクリプトです。  
+任意のラボで同じように使えます。
+
+```bash
+# 作成
+./scripts/create-bridge.sh bridge01
+
+# 削除
+./scripts/delete-bridge.sh bridge01
+```
+
+`-f` で `clab.yml` を指定すると、定義内の `kind: bridge` を自動抽出してまとめて処理します。
+
+```bash
+# clab.yml から bridge を抽出して作成
+./scripts/create-bridge.sh -f cisco/ios-xr/routing/basic/clab.yml
+
+# clab.yml から bridge を抽出して削除
+./scripts/delete-bridge.sh -f cisco/ios-xr/routing/basic/clab.yml
+```
+
 終了する場合は以下を実行してください。
 
 ```bash
 sudo -E containerlab destroy -t cisco/ios-xr/routing/basic/clab.yml
 ```
-
-## 画像設定（重要）
-
-- 通常は `*_IMAGE` の非バージョン変数を使います。
-- 特定バージョンを固定したい場合は、`.env` にバージョン付き変数を追加し、対象の `clab.yml` 側で参照名を切り替えてください。
