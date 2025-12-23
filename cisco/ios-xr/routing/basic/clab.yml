@@ -7,10 +7,45 @@ topology:
   kinds:
     cisco_xrd:
       image: ${IOSXR_IMAGE}
+    linux:
+      image: ${LINUX_IMAGE}
   nodes:
-    r1:
+    router01:
       kind: cisco_xrd
-    r2:
+    router02:
       kind: cisco_xrd
+    router03:
+      kind: cisco_xrd
+    router04:
+      kind: cisco_xrd
+    router05:
+      kind: cisco_xrd
+    router06:
+      kind: cisco_xrd
+    router07:
+      kind: cisco_xrd
+    host01:
+      kind: linux
+      exec:
+        - ip addr add 192.168.1.1/24 dev eth1
+        - ip link set eth1 up
+        - ip route add default via 192.168.1.254
+    host02:
+      kind: linux
+      exec:
+        - ip addr add 192.168.2.1/24 dev eth1
+        - ip link set eth1 up
+        - ip route add default via 192.168.2.254
+    bridge01:
+      kind: bridge
   links:
-    - endpoints: ["r1:Gi0/0/0/0", "r2:Gi0/0/0/0"]
+    - endpoints: ["router01:Gi0-0-0-0", "router02:Gi0-0-0-0"]
+    - endpoints: ["router01:Gi0-0-0-1", "router03:Gi0-0-0-0"]
+    - endpoints: ["router02:Gi0-0-0-1", "router03:Gi0-0-0-1"]
+    - endpoints: ["router02:Gi0-0-0-2", "router04:Gi0-0-0-0"]
+    - endpoints: ["router04:Gi0-0-0-1", "host01:eth1"]
+    - endpoints: ["router03:Gi0-0-0-2", "bridge01:eth1"]
+    - endpoints: ["router05:Gi0-0-0-0", "bridge01:eth2"]
+    - endpoints: ["router06:Gi0-0-0-0", "bridge01:eth3"]
+    - endpoints: ["router06:Gi0-0-0-1", "router07:Gi0-0-0-0"]
+    - endpoints: ["router07:Gi0-0-0-1", "host02:eth1"]
