@@ -1,6 +1,6 @@
 ## 概要
 
-`iosxr-basic.clab.yml` は XRd Control Plane（`xrd-control-plane`）7台 +
+`iosxr-ospf-basic.clab.yml` は XRd Control Plane（`xrd-control-plane`）7台 +
 Linux ホスト2台の構成です。
 
 ## 推奨スペック（目安）
