@@ -224,9 +224,8 @@ def main():
             failures.append(node)
             continue
 
-        node_dir = os.path.join(base_dir, node)
-        os.makedirs(node_dir, exist_ok=True)
-        out_path = os.path.join(node_dir, "host-conf.txt")
+        os.makedirs(base_dir, exist_ok=True)
+        out_path = os.path.join(base_dir, f"{node}-conf.txt")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(clean_output(result.stdout))
         print(f"[ok] {node} -> {out_path}")

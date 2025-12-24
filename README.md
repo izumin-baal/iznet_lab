@@ -6,14 +6,14 @@
 2) `.env` は自動読み込み前提にせず、明示的に読み込んでから実行します。
 
 ```bash
-source scripts/run-with-env.sh
+source scripts/clab-env-source
 ```
 
 3) 目的のラボのディレクトリに移動して起動します。`clab-*` がそのディレクトリ配下に作られるため、各ディレクトリで実行する運用にします。`sudo` を使うのが基本なので、`sudo -E` で環境変数を引き継ぎます。
 
 ```bash
-cd cisco/ios-xr/routing/basic
-sudo -E containerlab deploy -t iosxr-basic.clab.yml
+cd cisco/ios-xr/routing/ospf-basic
+sudo -E containerlab deploy
 ```
 
 ## 起動時の注意
@@ -36,32 +36,32 @@ aws ecr get-login-password --region <region> | sudo docker login --username AWS 
 
 ## Bridge スクリプト（ホスト側）
 
-`scripts/create-bridge.sh` と `scripts/delete-bridge.sh` はブリッジ名を引数で受け取る汎用スクリプトです。  
-任意のラボで同じように使えます。
+`clab-bridge-create` と `clab-bridge-delete` はブリッジ名を引数で受け取る汎用スクリプトです。  
+任意のラボで同じように使えます。`*.clab.yml` があるディレクトリでは自動検出にも対応します。
 
 ```bash
 # 作成
-./scripts/create-bridge.sh bridge01
+clab-bridge-create bridge01
 
 # 削除
-./scripts/delete-bridge.sh bridge01
+clab-bridge-delete bridge01
 ```
 
-`-f` で `clab.yml` を指定すると、定義内の `kind: bridge` を自動抽出してまとめて処理します。
+`*.clab.yml` があるディレクトリでは引数なしで `kind: bridge` を自動抽出します。
 
 ```bash
 # clab.yml から bridge を抽出して作成
-./scripts/create-bridge.sh -f cisco/ios-xr/routing/basic/iosxr-basic.clab.yml
+clab-bridge-create
 
 # clab.yml から bridge を抽出して削除
-./scripts/delete-bridge.sh -f cisco/ios-xr/routing/basic/iosxr-basic.clab.yml
+clab-bridge-delete
 ```
 
 終了する場合は以下を実行してください。
 
 ```bash
-cd cisco/ios-xr/routing/basic
-sudo -E containerlab destroy -t iosxr-basic.clab.yml
+cd cisco/ios-xr/routing/ospf-basic
+sudo -E containerlab destroy
 ```
 
 ## kind 一覧
@@ -89,46 +89,48 @@ linux
 
 ## コンフィグ取得スクリプト
 
-`scripts/get-clab-configs.py` は `*.clab.yml` に記載された機器へ SSH してコンフィグを取得し、
-同じ階層の `save/save-YYYYMMDDHHMMSS/<ホスト名>/host-conf.txt` に保存します。
+`clab-fetch-configs` は `*.clab.yml` に記載された機器へ SSH してコンフィグを取得し、
+同じ階層の `save/save-YYYYMMDDHHMMSS/<ホスト名>-conf.txt` に保存します。
 
 ### 使い方
 
 `*.clab.yml` があるディレクトリで実行します。
 
 ```bash
-scripts/get-clab-configs.py
+clab-fetch-configs
 ```
 
 `*.clab.yml` が複数ある場合は `--topo` を指定します。
 
 ```bash
-scripts/get-clab-configs.py --topo example.clab.yml
+clab-fetch-configs --topo example.clab.yml
 ```
 
-ホスト名と接続先が一致しない場合は `--host-map` で上書きできます。
+## Startup-config の生成
+
+`clab-generate-startup-configs` は `save/save-YYYYMMDDHHMMSS/` にある保存済みコンフィグから、
+`startup-config` で参照するファイルを生成します。
+
+### 使い方
+
+`*.clab.yml` があるディレクトリで実行します。
 
 ```bash
-cat > host-map.yml <<'YAML'
-RT-01: 10.0.0.2
-CONET: rt-conet.lab.local
-YAML
-
-scripts/get-clab-configs.py --host-map host-map.yml
+clab-generate-startup-configs
 ```
 
-### PATH について
-
-頻繁に使う場合は、リポジトリの `scripts` を PATH に追加すると便利です。
+保存日時を指定する場合は `--snapshot` を使います。`save-` の有無どちらでも受け付けます。
 
 ```bash
-export PATH=\"$PATH:$(pwd)/scripts\"
+clab-generate-startup-configs --snapshot 20251224231625
+clab-generate-startup-configs --snapshot save-20251224231625
 ```
 
-その場合は以下のように実行できます。
+`startup-config` が未設定のノードがある場合は、確認して `startup-configs/<node>.conf` を作成できます。
+自動作成したい場合は `--yes` を指定します。
 
 ```bash
-get-clab-configs.py
+clab-generate-startup-configs --yes
 ```
 
 ## インターフェース Description 命名規則

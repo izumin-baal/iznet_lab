@@ -14,5 +14,5 @@ Linux ホスト2台の構成です。
 `bridge01` はホスト側で事前に作成が必要です。
 
 ```bash
-./scripts/create-bridge.sh bridge01
+clab-bridge-create bridge01
 ```

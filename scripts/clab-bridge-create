@@ -4,8 +4,8 @@ set -euo pipefail
 usage() {
   cat <<'USAGE' >&2
 usage:
-  delete-bridge.sh <bridge-name>
-  delete-bridge.sh -f <clab.yml>
+  clab-bridge-create [bridge-name]
+  clab-bridge-create -f <clab.yml>
 USAGE
 }
 
@@ -27,15 +27,30 @@ extract_bridges() {
   ' "${clab_file}"
 }
 
-delete_bridge() {
+create_bridge() {
   local name="$1"
-  if ! ip link show "${name}" >/dev/null 2>&1; then
-    echo "${name} does not exist"
+  if ip link show "${name}" >/dev/null 2>&1; then
+    echo "${name} already exists"
     return 0
   fi
-  sudo ip link set "${name}" down
-  sudo ip link del "${name}" type bridge
-  echo "deleted ${name}"
+  sudo ip link add "${name}" type bridge
+  sudo ip link set "${name}" up
+  echo "created ${name}"
+}
+
+pick_clab_file() {
+  local matches
+  matches=( *.clab.yml )
+  if [[ ${#matches[@]} -eq 1 && -f "${matches[0]}" ]]; then
+    echo "${matches[0]}"
+    return 0
+  fi
+  if [[ ${#matches[@]} -eq 0 || ( ${#matches[@]} -eq 1 && "${matches[0]}" == "*.clab.yml" ) ]]; then
+    echo "no *.clab.yml found in current directory" >&2
+    return 2
+  fi
+  echo "multiple *.clab.yml found; use -f" >&2
+  return 2
 }
 
 CLAB_FILE=""
@@ -65,7 +80,20 @@ if [[ -n "${CLAB_FILE}" ]]; then
     exit 0
   fi
   for br in "${bridges[@]}"; do
-    delete_bridge "${br}"
+    create_bridge "${br}"
+  done
+  exit 0
+fi
+
+if [[ $# -eq 0 ]]; then
+  CLAB_FILE="$(pick_clab_file)"
+  mapfile -t bridges < <(extract_bridges "${CLAB_FILE}")
+  if [[ ${#bridges[@]} -eq 0 ]]; then
+    echo "no bridge nodes found in ${CLAB_FILE}"
+    exit 0
+  fi
+  for br in "${bridges[@]}"; do
+    create_bridge "${br}"
   done
   exit 0
 fi
@@ -75,4 +103,4 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 
-delete_bridge "$1"
+create_bridge "$1"

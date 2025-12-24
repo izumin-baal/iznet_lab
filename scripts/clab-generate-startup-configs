@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+import argparse
+import glob
+import os
+import shutil
+import sys
+
+import yaml
+
+
+def load_topology(path):
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not data or "topology" not in data or "nodes" not in data["topology"]:
+        raise ValueError("topology.nodes not found in clab.yml")
+    return data
+
+
+def pick_topo_path(topo_arg):
+    if topo_arg:
+        return os.path.abspath(topo_arg)
+    matches = glob.glob("*.clab.yml")
+    if len(matches) == 1:
+        return os.path.abspath(matches[0])
+    if not matches:
+        raise FileNotFoundError("no *.clab.yml found in current directory")
+    raise FileNotFoundError("multiple *.clab.yml found; use --topo")
+
+
+def pick_snapshot_dir(save_dir, snapshot):
+    if snapshot:
+        if snapshot.startswith("save-"):
+            return os.path.join(save_dir, snapshot)
+        return os.path.join(save_dir, f"save-{snapshot}")
+    if not os.path.isdir(save_dir):
+        raise FileNotFoundError(f"save dir not found: {save_dir}")
+    candidates = [
+        name
+        for name in os.listdir(save_dir)
+        if name.startswith("save-") and os.path.isdir(os.path.join(save_dir, name))
+    ]
+    if not candidates:
+        raise FileNotFoundError("no save-* directory found")
+    latest = sorted(candidates)[-1]
+    return os.path.join(save_dir, latest)
+
+
+def resolve_startup_path(topo_dir, startup_path):
+    if os.path.isabs(startup_path):
+        return startup_path
+    return os.path.join(topo_dir, startup_path)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Replace startup-config files with saved configs",
+    )
+    parser.add_argument(
+        "--topo",
+        help="Path to *.clab.yml (default: auto-detect in current directory)",
+    )
+    parser.add_argument(
+        "--save-dir",
+        default="save",
+        help="Save base dir (relative to the topo directory)",
+    )
+    parser.add_argument(
+        "--default-startup-dir",
+        default="startup-configs",
+        help="Default startup-config dir when missing (relative to topo directory)",
+    )
+    parser.add_argument(
+        "--snapshot",
+        help="Save timestamp or directory name (default: latest)",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Auto-create startup-config path when missing",
+    )
+    args = parser.parse_args()
+
+    topo_path = pick_topo_path(args.topo)
+    topo_dir = os.path.dirname(topo_path)
+    data = load_topology(topo_path)
+
+    nodes = data["topology"]["nodes"]
+    save_dir = os.path.join(topo_dir, args.save_dir)
+    snapshot_dir = pick_snapshot_dir(save_dir, args.snapshot)
+
+    failures = []
+    for node, info in nodes.items():
+        startup = info.get("startup-config")
+        if not startup:
+            default_startup = os.path.join(
+                args.default_startup_dir, f"{node}.conf"
+            )
+            if args.yes:
+                startup = default_startup
+            elif sys.stdin.isatty():
+                answer = input(
+                    f"[prompt] {node}: startup-config not set. "
+                    f"Create {default_startup}? [y/N] "
+                ).strip().lower()
+                if answer in {"y", "yes"}:
+                    startup = default_startup
+                else:
+                    print(f"[skip] {node}: startup-config not set", file=sys.stderr)
+                    failures.append(node)
+                    continue
+            else:
+                print(f"[error] {node}: startup-config not set", file=sys.stderr)
+                failures.append(node)
+                continue
+
+        src = os.path.join(snapshot_dir, f"{node}-conf.txt")
+        if not os.path.exists(src):
+            print(f"[error] {node}: saved config not found: {src}", file=sys.stderr)
+            failures.append(node)
+            continue
+
+        dst = resolve_startup_path(topo_dir, startup)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(src, dst)
+        print(f"[ok] {node} -> {dst}")
+
+    if failures:
+        print(f"[done] failures: {', '.join(failures)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
