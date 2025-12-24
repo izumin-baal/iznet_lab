@@ -2,3 +2,4 @@
 save/
 *.clab.yml.bak
 clab-*/
+test-logs/

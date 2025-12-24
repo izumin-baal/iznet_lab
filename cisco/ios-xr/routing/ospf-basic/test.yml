@@ -1,0 +1,63 @@
+tests:
+  - title: "Router01 Login"
+    detail: "router01 にログインできて show version が返ること"
+    hosts: ["router01"]
+    command: "show version"
+    expect:
+      - type: regex
+        value: "Cisco IOS XR"
+
+  - title: "OSPF Neighbor"
+    detail: "router01 の OSPF 隣接が FULL であること"
+    hosts: ["router01"]
+    command: "show ospf neighbor"
+    expect:
+      - type: contains
+        value: "FULL"
+    when: previous_success
+    delay: 1
+
+  - title: "OSPF Routes"
+    detail: "router01 に複数の OSPF ルートがあること"
+    hosts: ["router01"]
+    command: "show route ospf"
+    expect:
+      - type: contains
+        value: "192.168.1.0/24"
+      - type: contains
+        value: "192.168.2.0/24"
+    when: previous_success
+    delay: 1
+
+  - title: "Ping to Router04"
+    detail: "host01 から router04 へ ping が通ること"
+    hosts: ["host01"]
+    command: "ping -c 3 192.168.1.254"
+    expect:
+      - type: contains
+        value: "0% packet loss"
+    timeout: 5
+    retries: 2
+    when: previous_success
+    delay: 1
+
+  - title: "Ping host01 to host02"
+    detail: "host01 から host02 へ ping が通ること"
+    hosts: ["host01"]
+    command: "ping -c 3 192.168.2.1"
+    expect:
+      - type: contains
+        value: "0% packet loss"
+    timeout: 5
+    retries: 2
+    when: previous_success
+    delay: 1
+
+  - title: "NG Example (disabled)"
+    detail: "意図的に失敗する例（when: never で無効化）"
+    hosts: ["router01"]
+    command: "show route ospf"
+    expect:
+      - type: contains
+        value: "203.0.113.0/24"
+    when: always

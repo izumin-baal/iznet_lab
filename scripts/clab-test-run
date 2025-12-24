@@ -1,0 +1,691 @@
+#!/usr/bin/env python3
+import argparse
+import datetime
+import glob
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Dict, List, Optional, Tuple
+
+import yaml
+
+DEFAULT_TIMEOUT = 30
+DEFAULT_RETRIES = 1
+
+STATUS_PASS = "PASS"
+STATUS_FAIL = "FAIL"
+STATUS_SKIP = "SKIP"
+
+COLOR_RESET = "\033[0m"
+COLOR_GREEN = "\033[32m"
+COLOR_RED = "\033[31m"
+COLOR_YELLOW = "\033[33m"
+COLOR_CYAN = "\033[36m"
+
+
+KIND_DEFAULTS = {
+    "cisco_xrd": ("clab", "clab@123"),
+    "cisco_xrv9k": ("clab", "clab@123"),
+    "cisco_csr1000v": ("admin", "admin"),
+    "cisco_n9kv": ("admin", "admin"),
+    "cisco_iol": ("admin", "admin"),
+    "arista_ceos": ("admin", "admin"),
+    "juniper_crpd": ("root", "clab123"),
+    "juniper_vmx": ("admin", "admin@123"),
+    "juniper_vsrx": ("admin", "admin@123"),
+    "juniper_vjunosrouter": ("admin", "admin@123"),
+    "juniper_vjunosswitch": ("admin", "admin@123"),
+    "juniper_cjunosevolved": ("admin", "admin@123"),
+}
+
+
+def discover_test_files(root: str) -> List[str]:
+    matches = []
+    for dirpath, _, filenames in os.walk(root):
+        for name in filenames:
+            if name in ("test.yml", "test.yaml"):
+                matches.append(os.path.join(dirpath, name))
+                continue
+            if name.endswith(".test.yml") or name.endswith(".test.yaml"):
+                matches.append(os.path.join(dirpath, name))
+    return sorted(matches)
+
+
+def load_tests(path: str) -> List[dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    tests = data.get("tests")
+    if not isinstance(tests, list):
+        raise ValueError("tests must be a list")
+    return tests
+
+
+def load_topology(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not data or "topology" not in data or "nodes" not in data["topology"]:
+        raise ValueError("topology.nodes not found in clab.yml")
+    return data
+
+
+def normalize_hosts(hosts) -> List[str]:
+    if hosts is None:
+        return ["local"]
+    if isinstance(hosts, str):
+        return [hosts]
+    if isinstance(hosts, list) and hosts:
+        return [str(h) for h in hosts]
+    return ["local"]
+
+
+def normalize_expect(expect):
+    if expect is None:
+        return [{"type": "exit_code", "value": 0}]
+    if isinstance(expect, dict):
+        return [expect]
+    if isinstance(expect, list):
+        return expect
+    raise ValueError("expect must be a list or dict")
+
+
+def format_expectations(expect_list: List[dict]) -> List[str]:
+    formatted = []
+    for cond in expect_list:
+        if not isinstance(cond, dict):
+            formatted.append("invalid condition")
+            continue
+        ctype = cond.get("type")
+        value = cond.get("value")
+        formatted.append(f"{ctype}: {value}")
+    return formatted
+
+
+def render_command(template: str, host: str) -> str:
+    return template
+
+
+def sanitize_display_command(command: str) -> str:
+    lines = command.splitlines()
+    filtered = [line for line in lines if line.strip() != "terminal length 0"]
+    if not filtered:
+        return command
+    return "\n".join(filtered)
+
+
+def build_ssh_args() -> List[str]:
+    ssh_args = [
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "LogLevel=ERROR",
+        "-o",
+        "BatchMode=no",
+        "-tt",
+    ]
+    return ssh_args
+
+
+def pick_credentials(kind: str) -> Tuple[Optional[str], Optional[str]]:
+    default_user, default_pass = KIND_DEFAULTS.get(kind, (None, None))
+    return default_user, default_pass
+
+
+def run_ssh_with_askpass(
+    ssh_cmd: List[str], password: str, timeout: int
+) -> subprocess.CompletedProcess:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        script_path = os.path.join(tmpdir, "askpass.sh")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\n")
+            f.write("printf '%s\\n' " + shlex.quote(password) + "\n")
+        os.chmod(script_path, 0o700)
+        env = os.environ.copy()
+        env["SSH_ASKPASS"] = script_path
+        env["SSH_ASKPASS_REQUIRE"] = "force"
+        env.setdefault("DISPLAY", "none:0")
+        cmd = [arg for arg in ssh_cmd if arg != "-tt"]
+        return subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+
+
+def run_ssh(
+    ssh_cmd: List[str], password: Optional[str], timeout: int
+) -> subprocess.CompletedProcess:
+    if password:
+        if shutil.which("sshpass"):
+            cmd = ["sshpass", "-p", password] + ssh_cmd
+            return subprocess.run(cmd, text=True, capture_output=True, timeout=timeout)
+        return run_ssh_with_askpass(ssh_cmd, password, timeout)
+    return subprocess.run(ssh_cmd, text=True, capture_output=True, timeout=timeout)
+
+
+def check_expectations(stdout: str, stderr: str, returncode: int, expect_list: List[dict]) -> Tuple[bool, List[str]]:
+    failures = []
+    for idx, cond in enumerate(expect_list, 1):
+        if not isinstance(cond, dict):
+            failures.append(f"expect[{idx}]: invalid condition")
+            continue
+        ctype = cond.get("type")
+        value = cond.get("value")
+        value_text = "" if value is None else str(value)
+        if ctype == "contains":
+            if value_text not in stdout:
+                failures.append(f"expect[{idx}] contains not found")
+        elif ctype == "not_contains":
+            if value_text in stdout:
+                failures.append(f"expect[{idx}] not_contains matched")
+        elif ctype == "regex":
+            if re.search(value_text, stdout) is None:
+                failures.append(f"expect[{idx}] regex not matched")
+        elif ctype == "not_regex":
+            if re.search(value_text, stdout) is not None:
+                failures.append(f"expect[{idx}] not_regex matched")
+        elif ctype == "stderr_contains":
+            if value_text not in stderr:
+                failures.append(f"expect[{idx}] stderr_contains not found")
+        elif ctype == "exit_code":
+            expected = 0 if value is None else int(value)
+            if returncode != expected:
+                failures.append(f"expect[{idx}] exit_code {returncode} != {expected}")
+        else:
+            failures.append(f"expect[{idx}] unknown type '{ctype}'")
+    return len(failures) == 0, failures
+
+
+def run_command(command: List[str], timeout: int) -> Tuple[int, str, str, bool]:
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout, result.stderr, False
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        return 124, stdout, stderr, True
+
+
+def run_ssh_command(
+    command: List[str], password: Optional[str], timeout: int
+) -> Tuple[int, str, str, bool]:
+    try:
+        result = run_ssh(command, password, timeout)
+        return result.returncode, result.stdout, result.stderr, False
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        return 124, stdout, stderr, True
+
+
+def find_log_root(test_file: str) -> str:
+    current = os.path.abspath(os.path.dirname(test_file))
+    while True:
+        if glob.glob(os.path.join(current, "*.clab.yml")) or glob.glob(
+            os.path.join(current, "*.clab.yaml")
+        ):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return os.path.abspath(os.path.dirname(test_file))
+        current = parent
+
+
+def should_run_test(
+    when, previous_status: Optional[str], title_status: Dict[str, str]
+) -> Tuple[bool, str]:
+    if when is None:
+        return True, ""
+    if isinstance(when, str):
+        key = when.strip().lower()
+        if key in ("always", "true"):
+            return True, ""
+        if key in ("never", "false"):
+            return False, "when=never"
+        if key in ("previous_success", "prev_success", "success"):
+            if previous_status == STATUS_PASS:
+                return True, ""
+            return False, "previous test not success"
+        if key in ("previous_fail", "prev_fail", "fail"):
+            if previous_status == STATUS_FAIL:
+                return True, ""
+            return False, "previous test not fail"
+        status = title_status.get(when)
+        if status == STATUS_PASS:
+            return True, ""
+        if status is None:
+            return False, f"when test not found: {when}"
+        return False, f"when test status is {status}"
+    if isinstance(when, dict):
+        when = [when]
+    if isinstance(when, list):
+        for cond in when:
+            if not isinstance(cond, dict):
+                return False, "when condition invalid"
+            target = cond.get("test")
+            status = (cond.get("status") or "success").lower()
+            desired = STATUS_PASS if status in ("success", "pass") else STATUS_FAIL
+            if target:
+                actual = title_status.get(target)
+                if actual != desired:
+                    if actual is None:
+                        return False, f"when test not found: {target}"
+                    return False, f"when {target} is {actual}"
+            else:
+                if previous_status != desired:
+                    return False, "previous test status mismatch"
+        return True, ""
+    return False, "when condition invalid"
+
+
+def percent(pass_count: int, fail_count: int) -> float:
+    total = pass_count + fail_count
+    if total == 0:
+        return 0.0
+    return (pass_count / total) * 100.0
+
+
+def use_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    return sys.stdout.isatty()
+
+
+def colorize(text: str, color: str) -> str:
+    if not use_color():
+        return text
+    return f"{color}{text}{COLOR_RESET}"
+
+
+def print_block(label: str, text: str, indent: str = "    ") -> None:
+    print(f"{label}:")
+    print(f"{indent}---")
+    lines = text.splitlines()
+    if not lines:
+        print(f"{indent}(empty)")
+        print(f"{indent}---")
+        return
+    trimmed = lines[:]
+    while trimmed and trimmed[0].strip() == "":
+        trimmed.pop(0)
+    while trimmed and trimmed[-1].strip() == "":
+        trimmed.pop()
+    if not trimmed:
+        print(f"{indent}(empty)")
+        print(f"{indent}---")
+        return
+    for line in trimmed:
+        print(f"{indent}{line}")
+    print(f"{indent}---")
+
+
+def build_exec_command(
+    command: str,
+    host: str,
+    kind: Optional[str],
+    user: Optional[str],
+    password: Optional[str],
+    ssh_args: List[str],
+) -> Tuple[List[str], str, Optional[str]]:
+    if not host or host == "local":
+        return ["/bin/bash", "-lc", command], "local", None
+
+    if kind == "linux":
+        return ["sudo", "docker", "exec", "-i", host, "/bin/sh", "-lc", command], "local", None
+
+    if kind:
+        ssh_target = f"{user}@{host}"
+        return ["ssh"] + ssh_args + [ssh_target, command], "ssh", password
+
+    return ["/bin/bash", "-lc", command], "local", None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run test.yml checks recursively")
+    parser.add_argument("--root", default=".", help="Root directory to search")
+    parser.add_argument("--file", action="append", help="Specific test file")
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="Show command/expect/stdout/stderr for each test",
+    )
+    args = parser.parse_args()
+
+    if args.file:
+        test_files = [os.path.abspath(p) for p in args.file]
+    else:
+        test_files = discover_test_files(args.root)
+
+    if not test_files:
+        print("[error] no test.yml found", file=sys.stderr)
+        return 2
+
+    total_pass = 0
+    total_fail = 0
+    total_skip = 0
+    file_entries = []
+    total_tests = 0
+    for test_file in test_files:
+        try:
+            tests = load_tests(test_file)
+            file_entries.append((test_file, tests, None))
+            total_tests += len(tests)
+        except Exception as exc:
+            file_entries.append((test_file, None, exc))
+
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"Start: {start_time}")
+    print(f"Plan: tests={total_tests}")
+
+    current_index = 0
+    last_log_path = None
+    sudo_checked = False
+
+    for test_file, tests, load_error in file_entries:
+        if load_error is not None:
+            print(f"Error: {test_file}: {load_error}", file=sys.stderr)
+            total_fail += 1
+            continue
+
+        log_root = find_log_root(test_file)
+        topo_path = None
+        topo_data = None
+        topo_nodes = {}
+        current = os.path.abspath(os.path.dirname(test_file))
+        while True:
+            matches = glob.glob(os.path.join(current, "*.clab.yml")) + glob.glob(
+                os.path.join(current, "*.clab.yaml")
+            )
+            if matches:
+                topo_path = matches[0]
+                break
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        if topo_path:
+            try:
+                topo_data = load_topology(topo_path)
+                topo_nodes = topo_data["topology"]["nodes"]
+            except Exception:
+                topo_nodes = {}
+        needs_sudo = False
+        for test in tests:
+            if not isinstance(test, dict):
+                continue
+            for host in normalize_hosts(test.get("hosts")):
+                if host in topo_nodes and topo_nodes[host].get("kind") == "linux":
+                    needs_sudo = True
+                    break
+            if needs_sudo:
+                break
+        if needs_sudo and not sudo_checked:
+            print("Sudo: preparing docker exec (may prompt once)")
+            try:
+                subprocess.run(["sudo", "-v"], check=True)
+            except subprocess.CalledProcessError:
+                print("Error: sudo authentication failed", file=sys.stderr)
+                return 1
+            sudo_checked = True
+        log_dir = os.path.join(log_root, "test-logs")
+        os.makedirs(log_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        base = os.path.splitext(os.path.basename(test_file))[0]
+        log_path = os.path.join(log_dir, f"test-{base}-{timestamp}.log")
+        last_log_path = log_path
+
+        file_pass = 0
+        file_fail = 0
+        file_skip = 0
+
+        print(f"\nFile: {test_file} (tests={len(tests)})")
+        print(f"Log:  {log_path}")
+
+        title_status: Dict[str, str] = {}
+        previous_status: Optional[str] = None
+
+        with open(log_path, "w", encoding="utf-8") as log:
+            log.write(f"file: {test_file}\n")
+            log.write(f"start: {timestamp}\n\n")
+
+            for index, test in enumerate(tests, 1):
+                current_index += 1
+                if not isinstance(test, dict):
+                    msg = (
+                        f"Skip: ({current_index}/{total_tests}) "
+                        f"#{index} invalid test format"
+                    )
+                    print(colorize(msg, COLOR_YELLOW))
+                    log.write(msg + "\n")
+                    file_skip += 1
+                    total_skip += 1
+                    previous_status = STATUS_SKIP
+                    continue
+
+                title = str(test.get("title") or f"test-{index}")
+                detail = str(test.get("detail") or "")
+                hosts = normalize_hosts(test.get("hosts"))
+                command = test.get("command")
+                if not command:
+                    msg = (
+                        f"Fail: ({current_index}/{total_tests}) "
+                        f"{title}: command missing"
+                    )
+                    print(colorize(msg, COLOR_RED))
+                    log.write(msg + "\n")
+                    file_fail += 1
+                    total_fail += 1
+                    previous_status = STATUS_FAIL
+                    title_status[title] = STATUS_FAIL
+                    continue
+
+                should_run, reason = should_run_test(
+                    test.get("when"), previous_status, title_status
+                )
+                if not should_run:
+                    msg = (
+                        f"Skip: ({current_index}/{total_tests}) "
+                        f"{title}: {reason}"
+                    )
+                    print()
+                    print(colorize(msg, COLOR_YELLOW))
+                    print()
+                    log.write(msg + "\n")
+                    file_skip += 1
+                    total_skip += 1
+                    previous_status = STATUS_SKIP
+                    title_status[title] = STATUS_SKIP
+                    continue
+
+                expect_list = normalize_expect(test.get("expect"))
+                expect_lines = format_expectations(expect_list)
+                timeout = int(test.get("timeout") or args.timeout)
+                retries = int(test.get("retries") or args.retries)
+                delay = float(test.get("delay") or 0)
+                if retries < 1:
+                    retries = 1
+
+                log.write(f"[test] {title}\n")
+                if detail:
+                    log.write(f"detail: {detail}\n")
+                log.write(f"hosts: {', '.join(hosts)}\n")
+                log.write(f"timeout: {timeout}s retries: {retries}\n")
+                if delay:
+                    log.write(f"delay: {delay:.1f}s (before)\n")
+                log.write("expect:\n")
+                for line in expect_lines:
+                    log.write(f"  - {line}\n")
+
+                print(
+                    colorize(
+                        f"\nTest {current_index}/{total_tests}: {title}",
+                        COLOR_CYAN,
+                    )
+                )
+                if detail:
+                    print(f"  Detail: {detail}")
+                print(f"  Hosts: {', '.join(hosts)}")
+                print(f"  Timeout: {timeout}s  Retries: {retries}")
+                if delay:
+                    print(f"  Delay: {delay:.1f}s")
+                if args.detail:
+                    print("  Expect:")
+                    for line in expect_lines:
+                        print(f"    - {line}")
+
+                if delay:
+                    time.sleep(delay)
+
+                host_results = []
+                for host in hosts:
+                    host_label = host
+                    cmd = render_command(command, host)
+                    display_cmd = sanitize_display_command(cmd)
+                    kind = None
+                    user = None
+                    password = None
+                    if host in topo_nodes:
+                        kind = topo_nodes[host].get("kind")
+                        user, password = pick_credentials(kind)
+                        if kind != "linux" and user is None:
+                            msg = (
+                                f"Fail: ({current_index}/{total_tests}) "
+                                f"{title} @ {host_label}: "
+                                f"no default credentials for kind '{kind}'"
+                            )
+                            print(colorize(msg, COLOR_RED))
+                            log.write(msg + "\n")
+                            host_results.append(False)
+                            continue
+                    elif host != "local":
+                        msg = (
+                            f"Fail: ({current_index}/{total_tests}) "
+                            f"{title} @ {host_label}: host not found in topology"
+                        )
+                        print(colorize(msg, COLOR_RED))
+                        log.write(msg + "\n")
+                        host_results.append(False)
+                        continue
+
+                    exec_cmd, exec_mode, exec_password = build_exec_command(
+                        cmd,
+                        host_label,
+                        kind,
+                        user,
+                        password,
+                        build_ssh_args(),
+                    )
+                    log.write(f"\n[host] {host_label}\n")
+                    log.write(f"command: {display_cmd}\n")
+                    if args.detail:
+                        print_block("  Command", display_cmd, indent="    ")
+
+                    ok = False
+                    failures = []
+                    last_stdout = ""
+                    last_stderr = ""
+                    last_rc = 0
+                    timed_out = False
+
+                    for attempt in range(1, retries + 1):
+                        if exec_mode == "ssh":
+                            rc, stdout, stderr, timed_out = run_ssh_command(
+                                exec_cmd, exec_password, timeout
+                            )
+                        else:
+                            rc, stdout, stderr, timed_out = run_command(exec_cmd, timeout)
+                        last_stdout = stdout
+                        last_stderr = stderr
+                        last_rc = rc
+                        ok, failures = check_expectations(
+                            stdout, stderr, rc, expect_list
+                        )
+                        if ok:
+                            log.write(f"attempt {attempt}: PASS\n")
+                            break
+                        log.write(
+                            f"attempt {attempt}: FAIL ({'; '.join(failures)})\n"
+                        )
+
+                    if timed_out:
+                        failures.append("timeout")
+
+                    log.write("--- stdout ---\n")
+                    log.write(last_stdout.rstrip("\n") + "\n")
+                    log.write("--- end stdout ---\n")
+                    log.write("--- stderr ---\n")
+                    log.write(last_stderr.rstrip("\n") + "\n")
+                    log.write("--- end stderr ---\n")
+                    if args.detail:
+                        if last_stdout or last_stderr:
+                            if last_stdout:
+                                print_block("  Stdout", last_stdout, indent="    ")
+                            if last_stderr:
+                                print_block("  Stderr", last_stderr, indent="    ")
+
+                    host_results.append(ok)
+
+                    status = STATUS_PASS if ok else STATUS_FAIL
+                    label = "PASS" if ok else "FAIL"
+                    color = COLOR_GREEN if ok else COLOR_RED
+                    print(
+                        colorize(
+                            f"  Result: {label} @ {host_label}",
+                            color,
+                        )
+                    )
+
+                if all(host_results):
+                    file_pass += 1
+                    total_pass += 1
+                    previous_status = STATUS_PASS
+                    title_status[title] = STATUS_PASS
+                else:
+                    file_fail += 1
+                    total_fail += 1
+                    previous_status = STATUS_FAIL
+                    title_status[title] = STATUS_FAIL
+
+                log.write("\n")
+
+        file_rate = percent(file_pass, file_fail)
+        file_total = file_pass + file_fail + file_skip
+        print()
+        print(
+            "Summary: "
+            f"tests {file_total} | pass {file_pass} | fail {file_fail} | "
+            f"skip {file_skip} | success {file_rate:.1f}%"
+        )
+
+    total_rate = percent(total_pass, total_fail)
+    total_all = total_pass + total_fail + total_skip
+    print(
+        "Total: "
+        f"tests {total_all} | pass {total_pass} | fail {total_fail} | "
+        f"skip {total_skip} | success {total_rate:.1f}%"
+    )
+    if last_log_path:
+        rel_path = os.path.relpath(last_log_path, os.getcwd())
+        print("See log:")
+        print(f"  cat {rel_path}")
+    return 0 if total_fail == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -34,35 +34,145 @@ sudo -E containerlab deploy
 aws ecr get-login-password --region <region> | sudo docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
 ```
 
-## Bridge スクリプト（ホスト側）
+## Scripts
 
-`clab-bridge-create` と `clab-bridge-delete` はブリッジ名を引数で受け取る汎用スクリプトです。  
-任意のラボで同じように使えます。`*.clab.yml` があるディレクトリでは自動検出にも対応します。
+| Script | 概要 | 実行場所 |
+| --- | --- | --- |
+| `scripts/clab-env-source` | `.env` を読み込む | どこでも |
+| `scripts/clab-bridge-create` | Bridge 作成 | `*.clab.yml` があるディレクトリ |
+| `scripts/clab-bridge-delete` | Bridge 削除 | `*.clab.yml` があるディレクトリ |
+| `scripts/clab-fetch-configs` | SSH でコンフィグ取得 | `*.clab.yml` があるディレクトリ |
+| `scripts/clab-generate-startup-configs` | 保存済みコンフィグから startup-config 生成 | `*.clab.yml` があるディレクトリ |
+| `scripts/clab-test-run` | `test.yml` を再帰的に実行 | `*.clab.yml` があるディレクトリ |
+
+### clab-env-source
+
+`.env` を明示的に読み込みます。
 
 ```bash
-# 作成
-clab-bridge-create bridge01
+source scripts/clab-env-source
+```
 
-# 削除
+### clab-bridge-create / clab-bridge-delete
+
+`*.clab.yml` があるディレクトリで引数なし実行すると `kind: bridge` を自動抽出します。
+
+```bash
+clab-bridge-create bridge01
 clab-bridge-delete bridge01
 ```
 
-`*.clab.yml` があるディレクトリでは引数なしで `kind: bridge` を自動抽出します。
+### clab-fetch-configs
+
+`*.clab.yml` に記載された機器へ SSH してコンフィグを取得し、
+`save/save-YYYYMMDDHHMMSS/<ホスト名>-conf.txt` に保存します。
 
 ```bash
-# clab.yml から bridge を抽出して作成
-clab-bridge-create
-
-# clab.yml から bridge を抽出して削除
-clab-bridge-delete
+clab-fetch-configs
+clab-fetch-configs --topo example.clab.yml
 ```
 
-終了する場合は以下を実行してください。
+### clab-generate-startup-configs
+
+`save/save-YYYYMMDDHHMMSS/` の保存済みコンフィグから `startup-config` を生成します。
+`kind: linux` と `kind: bridge` は自動的にスキップします。
 
 ```bash
-cd cisco/ios-xr/routing/ospf-basic
-sudo -E containerlab destroy
+clab-generate-startup-configs
+clab-generate-startup-configs --snapshot 20251224231625
+clab-generate-startup-configs --write-topo
 ```
+
+### clab-test-run
+
+任意の階層に `test.yml` / `test.yaml` / `*.test.yml` を配置し、再帰的に実行できます。
+
+#### test.yml サンプル
+
+```yaml
+tests:
+  - title: "OSPF Neighbor"
+    detail: "router01 の OSPF 隣接が FULL であること"
+    hosts: ["router01"]
+    command: "show ospf neighbor"
+    expect:
+      - type: contains
+        value: "FULL"
+      - type: regex
+        value: "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"
+
+  - title: "Ping host01 -> host02"
+    detail: "host01 から host02 へ ping が通ること"
+    hosts: ["host01"]
+    command: "ping -c 3 192.168.2.1"
+    expect:
+      - type: contains
+        value: "0% packet loss"
+    when: previous_success
+    timeout: 5
+    retries: 2
+```
+
+#### 実行
+
+```bash
+scripts/clab-test-run
+scripts/clab-test-run --root cisco/ios-xr
+scripts/clab-test-run --file cisco/ios-xr/routing/ospf-basic/test.yml
+```
+
+#### 期待値 (expect)
+
+| type | 意味 |
+| --- | --- |
+| `contains` | 標準出力に文字列が含まれる |
+| `not_contains` | 標準出力に文字列が含まれない |
+| `regex` | 標準出力が正規表現に一致する |
+| `not_regex` | 標準出力が正規表現に一致しない |
+| `stderr_contains` | 標準エラーに文字列が含まれる |
+| `exit_code` | 終了コードが一致する |
+
+`expect` が未指定の場合は `exit_code=0` を期待します。
+`expect` は複数指定した場合、すべて満たす必要があります。
+
+否定条件の例:
+
+```yaml
+expect:
+  - type: not_contains
+    value: "DOWN"
+```
+
+#### 前提条件 (when)
+
+| 指定 | 意味 |
+| --- | --- |
+| `previous_success` | 直前のテストが PASS の場合のみ実行 |
+| `previous_fail` | 直前のテストが FAIL の場合のみ実行 |
+| `always` | 常に実行 |
+| `never` | 常にスキップ |
+| `<test title>` | 指定したタイトルのテストが PASS の場合のみ実行 |
+
+`hosts` を複数指定した場合は、各ホストで実行され、すべて PASS の場合のみそのテストが PASS になります。
+
+例:
+
+```yaml
+when: previous_success
+```
+
+```yaml
+when: "OSPF Neighbor"
+```
+
+#### ログ出力
+
+最も近い `*.clab.yml` があるディレクトリに `test-logs/` を作成し、
+`test-<ファイル名>-YYYYMMDDHHMMSS.log` を出力します。
+
+#### オプション
+
+`--root` / `--file` / `--timeout` / `--retries` / `--detail`  
 
 ## kind 一覧
 
