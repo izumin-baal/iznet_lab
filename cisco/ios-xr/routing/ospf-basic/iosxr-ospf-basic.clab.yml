@@ -1,9 +1,5 @@
 name: iosxr-ospf-basic
-prefix: ""
-
-# Set IOSXR_IMAGE in your environment (or .env) to use your own registry.
-# Example: IOSXR_IMAGE=registry.example.com/network-os/xrd:7.11.1
-
+prefix: ''
 topology:
   kinds:
     cisco_xrd:
@@ -28,25 +24,45 @@ topology:
     host01:
       kind: linux
       exec:
-        - ip addr add 192.168.1.1/24 dev eth1
-        - ip link set eth1 up
-        - ip route replace default via 192.168.1.254
+      - ip addr add 192.168.1.1/24 dev eth1
+      - ip link set eth1 up
+      - ip route replace default via 192.168.1.254
     host02:
       kind: linux
       exec:
-        - ip addr add 192.168.2.1/24 dev eth1
-        - ip link set eth1 up
-        - ip route replace default via 192.168.2.254
+      - ip addr add 192.168.2.1/24 dev eth1
+      - ip link set eth1 up
+      - ip route replace default via 192.168.2.254
     bridge01:
       kind: bridge
   links:
-    - endpoints: ["router01:Gi0-0-0-0", "router02:Gi0-0-0-0"]
-    - endpoints: ["router01:Gi0-0-0-1", "router03:Gi0-0-0-0"]
-    - endpoints: ["router02:Gi0-0-0-1", "router03:Gi0-0-0-1"]
-    - endpoints: ["router02:Gi0-0-0-2", "router04:Gi0-0-0-0"]
-    - endpoints: ["router04:Gi0-0-0-1", "host01:eth1"]
-    - endpoints: ["router03:Gi0-0-0-2", "bridge01:eth1"]
-    - endpoints: ["router05:Gi0-0-0-0", "bridge01:eth2"]
-    - endpoints: ["router06:Gi0-0-0-0", "bridge01:eth3"]
-    - endpoints: ["router06:Gi0-0-0-1", "router07:Gi0-0-0-0"]
-    - endpoints: ["router07:Gi0-0-0-1", "host02:eth1"]
+  - endpoints:
+    - router01:Gi0-0-0-0
+    - router02:Gi0-0-0-0
+  - endpoints:
+    - router01:Gi0-0-0-1
+    - router03:Gi0-0-0-0
+  - endpoints:
+    - router02:Gi0-0-0-1
+    - router03:Gi0-0-0-1
+  - endpoints:
+    - router02:Gi0-0-0-2
+    - router04:Gi0-0-0-0
+  - endpoints:
+    - router04:Gi0-0-0-1
+    - host01:eth1
+  - endpoints:
+    - router03:Gi0-0-0-2
+    - bridge01:eth1
+  - endpoints:
+    - router05:Gi0-0-0-0
+    - bridge01:eth2
+  - endpoints:
+    - router06:Gi0-0-0-0
+    - bridge01:eth3
+  - endpoints:
+    - router06:Gi0-0-0-1
+    - router07:Gi0-0-0-0
+  - endpoints:
+    - router07:Gi0-0-0-1
+    - host02:eth1
