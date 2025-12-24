@@ -129,16 +129,16 @@ clab-generate-startup-configs --snapshot 20251224231625
 clab-generate-startup-configs --snapshot save-20251224231625
 ```
 
-`startup-config` を `clab.yml` に追記したい場合は `--update-topo` を使います。
+`startup-config` を `clab.yml` に追記したい場合は `--write-topo` を使います。
 
 ```bash
-clab-generate-startup-configs --update-topo
+clab-generate-startup-configs --write-topo
 ```
 
-`--yes-update` を指定すると確認なしで `clab.yml` を更新します。
+確認なしで追記したい場合は `--write-topo-yes` を使います。
 
 ```bash
-clab-generate-startup-configs --yes-update
+clab-generate-startup-configs --write-topo-yes
 ```
 
 ## インターフェース Description 命名規則
