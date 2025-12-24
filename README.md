@@ -197,60 +197,6 @@ bridge
 linux
 ```
 
-## コンフィグ取得スクリプト
-
-`clab-fetch-configs` は `*.clab.yml` に記載された機器へ SSH してコンフィグを取得し、
-同じ階層の `save/save-YYYYMMDDHHMMSS/<ホスト名>-conf.txt` に保存します。
-
-### 使い方
-
-`*.clab.yml` があるディレクトリで実行します。
-
-```bash
-clab-fetch-configs
-```
-
-`*.clab.yml` が複数ある場合は `--topo` を指定します。
-
-```bash
-clab-fetch-configs --topo example.clab.yml
-```
-
-## Startup-config の生成
-
-`clab-generate-startup-configs` は `save/save-YYYYMMDDHHMMSS/` にある保存済みコンフィグから、
-`startup-config` で参照するファイルを生成します。`startup-config` が未設定でも
-`startup-configs/<node>.conf` を生成して反映します。
-`kind: linux` と `kind: bridge` は自動的にスキップします。
-既存の `startup-config` と保存済みコンフィグが一致しない場合は差分を表示します。
-
-### 使い方
-
-`*.clab.yml` があるディレクトリで実行します。
-
-```bash
-clab-generate-startup-configs
-```
-
-保存日時を指定する場合は `--snapshot` を使います。`save-` の有無どちらでも受け付けます。
-
-```bash
-clab-generate-startup-configs --snapshot 20251224231625
-clab-generate-startup-configs --snapshot save-20251224231625
-```
-
-`startup-config` を `clab.yml` に追記したい場合は `--write-topo` を使います。
-
-```bash
-clab-generate-startup-configs --write-topo
-```
-
-確認なしで追記したい場合は `--write-topo-yes` を使います。
-
-```bash
-clab-generate-startup-configs --write-topo-yes
-```
-
 ## インターフェース Description 命名規則
 
 ネットワーク構成管理のため、全ルーターのインターフェース Description を統一します。  
