@@ -87,6 +87,50 @@ bridge
 linux
 ```
 
+## コンフィグ取得スクリプト
+
+`scripts/get-clab-configs.py` は `*.clab.yml` に記載された機器へ SSH してコンフィグを取得し、
+同じ階層の `save/save-YYYYMMDDHHMMSS/<ホスト名>/host-conf.txt` に保存します。
+
+### 使い方
+
+`*.clab.yml` があるディレクトリで実行します。
+
+```bash
+scripts/get-clab-configs.py
+```
+
+`*.clab.yml` が複数ある場合は `--topo` を指定します。
+
+```bash
+scripts/get-clab-configs.py --topo example.clab.yml
+```
+
+ホスト名と接続先が一致しない場合は `--host-map` で上書きできます。
+
+```bash
+cat > host-map.yml <<'YAML'
+RT-01: 10.0.0.2
+CONET: rt-conet.lab.local
+YAML
+
+scripts/get-clab-configs.py --host-map host-map.yml
+```
+
+### PATH について
+
+頻繁に使う場合は、リポジトリの `scripts` を PATH に追加すると便利です。
+
+```bash
+export PATH=\"$PATH:$(pwd)/scripts\"
+```
+
+その場合は以下のように実行できます。
+
+```bash
+get-clab-configs.py
+```
+
 ## インターフェース Description 命名規則
 
 ネットワーク構成管理のため、全ルーターのインターフェース Description を統一します。  
