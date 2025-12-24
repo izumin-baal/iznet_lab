@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 usage() {
   cat <<'USAGE' >&2
@@ -8,29 +7,34 @@ usage:
 USAGE
 }
 
-ENV_FILE=".env"
-
-while getopts ":f:h" opt; do
-  case "${opt}" in
-    f) ENV_FILE="${OPTARG}" ;;
-    h) usage; exit 0 ;;
-    \?) echo "invalid option: -${OPTARG}" >&2; usage; exit 2 ;;
-    :) echo "option -${OPTARG} requires an argument" >&2; usage; exit 2 ;;
-  esac
-done
-shift $((OPTIND - 1))
-
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  echo "this script must be sourced to keep env vars in the current shell" >&2
   usage
   exit 2
 fi
 
+# 初期値設定
+ENV_FILE=".env"
+OPTIND=1
+
+while getopts ":f:h" opt; do
+  case "${opt}" in
+    f) ENV_FILE="${OPTARG}" ;;
+    h) usage; return 0 ;;
+    \?) usage; return 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "env file not found: ${ENV_FILE}" >&2
+  # 変数を掃除して終了
+  unset ENV_FILE OPTIND opt
   return 2
 fi
 
 set -a
 . "${ENV_FILE}"
 set +a
+
+# 使用した変数を削除
+unset ENV_FILE OPTIND opt
