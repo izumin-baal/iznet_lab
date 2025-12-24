@@ -28,6 +28,14 @@ sudo -E containerlab deploy -t iosxr-basic.clab.yml
 - `clab-*` ディレクトリが残っていると `first-boot.cfg` が再生成されません。
 - メモリが厳しい場合は swap を増やすか `vm.swappiness` を上げると改善する場合があります。
 
+## AWS ECR への sudo ログイン（オプション）
+
+環境ごとに値が異なるため、`<...>` は自身の値に置き換えてください。
+
+```bash
+aws ecr get-login-password --region <region> | sudo docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+```
+
 ## Bridge スクリプト（ホスト側）
 
 `scripts/create-bridge.sh` と `scripts/delete-bridge.sh` はブリッジ名を引数で受け取る汎用スクリプトです。  
