@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+import argparse
+import datetime
+import glob
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+
+import yaml
+
+KIND_COMMAND = {
+    "cisco_xrd": "terminal length 0\nshow running-config",
+    "cisco_xrv9k": "terminal length 0\nshow running-config",
+    "cisco_csr1000v": "terminal length 0\nshow running-config",
+    "cisco_n9kv": "terminal length 0\nshow running-config",
+    "cisco_iol": "terminal length 0\nshow running-config",
+    "arista_ceos": "terminal length 0\nshow running-config",
+    "juniper_crpd": "show configuration | display set",
+    "juniper_vmx": "show configuration | display set",
+    "juniper_vsrx": "show configuration | display set",
+    "juniper_vjunosrouter": "show configuration | display set",
+    "juniper_vjunosswitch": "show configuration | display set",
+    "juniper_cjunosevolved": "show configuration | display set",
+}
+
+KIND_DEFAULTS = {
+    "cisco_xrd": ("clab", "clab@123"),
+    "cisco_xrv9k": ("clab", "clab@123"),
+    "cisco_csr1000v": ("admin", "admin"),
+    "cisco_n9kv": ("admin", "admin"),
+    "cisco_iol": ("admin", "admin"),
+    "arista_ceos": ("admin", "admin"),
+    "juniper_crpd": ("root", "clab123"),
+    "juniper_vmx": ("admin", "admin@123"),
+    "juniper_vsrx": ("admin", "admin@123"),
+    "juniper_vjunosrouter": ("admin", "admin@123"),
+    "juniper_vjunosswitch": ("admin", "admin@123"),
+    "juniper_cjunosevolved": ("admin", "admin@123"),
+}
+
+
+def run(cmd, check=True):
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def load_topology(path):
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not data or "topology" not in data or "nodes" not in data["topology"]:
+        raise ValueError("topology.nodes not found in clab.yml")
+    return data
+
+
+def clean_output(text):
+    lines = []
+    for line in text.replace("\r", "").splitlines():
+        if line.startswith("Connection to "):
+            continue
+        if line.startswith("Warning: Permanently added "):
+            continue
+        lines.append(line)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_ssh_args(args):
+    ssh_args = [
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "LogLevel=ERROR",
+        "-o",
+        "BatchMode=no",
+        "-tt",
+    ]
+    if args.ssh_config:
+        ssh_args += ["-F", args.ssh_config]
+    if args.identity:
+        ssh_args += ["-i", args.identity]
+    if args.port:
+        ssh_args += ["-p", str(args.port)]
+    if args.ssh_args:
+        ssh_args += shlex.split(args.ssh_args)
+    return ssh_args
+
+
+def load_host_map(path):
+    if not path:
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        if path.endswith(".json"):
+            data = json.load(f)
+        else:
+            data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError("host map must be a mapping of node name to IP")
+    return data
+
+
+def pick_credentials(kind, args):
+    default_user, default_pass = KIND_DEFAULTS.get(kind, (None, None))
+    user = args.user or default_user
+    password = args.password or default_pass
+    if kind == "crpd":
+        user = args.junos_user or user
+        password = args.junos_password or password
+    return user, password
+
+
+def run_ssh_with_askpass(ssh_cmd, password):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        script_path = os.path.join(tmpdir, "askpass.sh")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\n")
+            f.write("printf '%s\\n' " + shlex.quote(password) + "\n")
+        os.chmod(script_path, 0o700)
+        env = os.environ.copy()
+        env["SSH_ASKPASS"] = script_path
+        env["SSH_ASKPASS_REQUIRE"] = "force"
+        env.setdefault("DISPLAY", "none:0")
+        cmd = [arg for arg in ssh_cmd if arg != "-tt"]
+        return subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True,
+            env=env,
+            stdin=subprocess.DEVNULL,
+        )
+
+
+def run_ssh(ssh_cmd, password):
+    if password:
+        if shutil.which("sshpass"):
+            cmd = ["sshpass", "-p", password] + ssh_cmd
+            return subprocess.run(cmd, text=True, capture_output=True)
+        return run_ssh_with_askpass(ssh_cmd, password)
+    return subprocess.run(ssh_cmd, text=True, capture_output=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Fetch configs via SSH for nodes defined in a clab.yml",
+    )
+    parser.add_argument(
+        "--topo",
+        help="Path to *.clab.yml (default: auto-detect in current directory)",
+    )
+    parser.add_argument(
+        "--save-dir",
+        default="save",
+        help="Output base dir (relative to the topo directory)",
+    )
+    parser.add_argument(
+        "--host-map",
+        help="YAML/JSON mapping of node name to management IP",
+    )
+    parser.add_argument("--user", help="Default SSH user (override defaults)")
+    parser.add_argument("--password", help="Default SSH password (override defaults)")
+    parser.add_argument(
+        "--junos-user",
+        default=None,
+        help="SSH user for Junos (crpd); overrides defaults",
+    )
+    parser.add_argument(
+        "--junos-password",
+        default=None,
+        help="SSH password for Junos (crpd); overrides defaults",
+    )
+    parser.add_argument("--identity", help="SSH identity file")
+    parser.add_argument("--port", type=int, help="SSH port")
+    parser.add_argument("--ssh-config", help="SSH config file")
+    parser.add_argument("--ssh-args", help="Extra ssh args (quoted string)")
+    args = parser.parse_args()
+
+    if args.topo:
+        topo_path = os.path.abspath(args.topo)
+    else:
+        matches = glob.glob("*.clab.yml")
+        if len(matches) == 1:
+            topo_path = os.path.abspath(matches[0])
+        elif not matches:
+            print("[error] no *.clab.yml found in current directory", file=sys.stderr)
+            return 2
+        else:
+            print("[error] multiple *.clab.yml found; use --topo", file=sys.stderr)
+            return 2
+    topo_dir = os.path.dirname(topo_path)
+    data = load_topology(topo_path)
+
+    nodes = data["topology"]["nodes"]
+    host_map = load_host_map(args.host_map)
+    ssh_args = build_ssh_args(args)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    base_dir = os.path.join(topo_dir, args.save_dir, f"save-{timestamp}")
+
+    failures = []
+    for node, info in nodes.items():
+        kind = info.get("kind")
+        cmd = KIND_COMMAND.get(kind)
+        if not cmd:
+            print(f"[skip] {node}: unsupported kind '{kind}'", file=sys.stderr)
+            continue
+
+        target_host = host_map.get(node, node)
+
+        user, password = pick_credentials(kind, args)
+        if not user:
+            print(f"[error] no user set for {node} ({kind})", file=sys.stderr)
+            failures.append(node)
+            continue
+        ssh_target = f"{user}@{target_host}"
+        ssh_cmd = ["ssh"] + ssh_args + [ssh_target, cmd]
+        result = run_ssh(ssh_cmd, password)
+        if result.returncode != 0:
+            print(
+                f"[error] ssh failed for {node} ({ssh_target}): {result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            failures.append(node)
+            continue
+
+        node_dir = os.path.join(base_dir, node)
+        os.makedirs(node_dir, exist_ok=True)
+        out_path = os.path.join(node_dir, "host-conf.txt")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(clean_output(result.stdout))
+        print(f"[ok] {node} -> {out_path}")
+
+    if failures:
+        print(f"[done] failures: {', '.join(failures)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

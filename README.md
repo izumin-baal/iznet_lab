@@ -63,3 +63,66 @@ aws ecr get-login-password --region <region> | sudo docker login --username AWS 
 cd cisco/ios-xr/routing/basic
 sudo -E containerlab destroy -t iosxr-basic.clab.yml
 ```
+
+## kind 一覧
+
+`*.clab.yml` で利用する kind は以下の通りです。
+
+```
+cisco_xrd
+cisco_xrv9k
+cisco_csr1000v
+cisco_n9kv
+cisco_iol
+juniper_crpd
+juniper_vmx
+juniper_vsrx
+juniper_vjunosrouter
+juniper_vjunosswitch
+juniper_cjunosevolved
+arista_ceos
+sonic-vs
+paloalto_panos
+bridge
+linux
+```
+
+## インターフェース Description 命名規則
+
+ネットワーク構成管理のため、全ルーターのインターフェース Description を統一します。  
+運用管理の効率化とトラブルシューティング時の視認性向上を目的とします。
+
+### 1. 基本フォーマット
+
+以下の 3 要素を `###` で囲んで記載します。各項目の間は半角スペース 1 つです。
+
+```
+### [Category]: [Remote_Hostname] [Remote_Port] ###
+```
+
+### 2. カテゴリー定義（Category）
+
+| Category | 意味・用途 |
+| --- | --- |
+| internet_transit | ISP/トランジット上位回線 |
+| internet_ixp | IXP 参加回線 |
+| internet_pni | 事業者間の相対接続 (PNI) |
+| uplink | 上位階層への収容回線（コア/上位 RT） |
+| downlink | 下位階層への収容回線（配下 RT/スイッチ） |
+| interlink | ペア機器の内部リンク |
+| p2p | 拠点間または拠点内の P2P 専用線 |
+
+### 3. 記載例
+
+```
+description ### internet_transit: AS64512_RT01 Gi0/0/0/1 ###
+description ### internet_ixp: JPIX Gi0/0/0/2 ###
+description ### uplink: CORE-RT01 Gi0/0/0/0 ###
+description ### interlink: Osaka-Branch-RT01 Gi0/0/1/0 ###
+```
+
+### 4. 運用上の注意点
+
+- 視認性の維持: `show interface description` 実行時に情報が欠落しないよう、ホスト名は可能な限り公式の短縮名称を使用してください。
+- 記号の統一: カテゴリー後の区切りは必ず `:`（コロン）を使用してください。
+- 変更時の更新: 物理ポートの差し替えや対向機器のホスト名変更が発生した場合は、速やかに Description も更新してください。
