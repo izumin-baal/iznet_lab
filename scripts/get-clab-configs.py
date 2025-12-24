@@ -18,12 +18,12 @@ KIND_COMMAND = {
     "cisco_n9kv": "terminal length 0\nshow running-config",
     "cisco_iol": "terminal length 0\nshow running-config",
     "arista_ceos": "terminal length 0\nshow running-config",
-    "juniper_crpd": "show configuration | display set",
-    "juniper_vmx": "show configuration | display set",
-    "juniper_vsrx": "show configuration | display set",
-    "juniper_vjunosrouter": "show configuration | display set",
-    "juniper_vjunosswitch": "show configuration | display set",
-    "juniper_cjunosevolved": "show configuration | display set",
+    "juniper_crpd": "show configuration | display set | no-more",
+    "juniper_vmx": "show configuration | display set | no-more",
+    "juniper_vsrx": "show configuration | display set | no-more",
+    "juniper_vjunosrouter": "show configuration | display set | no-more",
+    "juniper_vjunosswitch": "show configuration | display set | no-more",
+    "juniper_cjunosevolved": "show configuration | display set | no-more",
 }
 
 KIND_DEFAULTS = {
