@@ -9,18 +9,25 @@ topology:
   nodes:
     router01:
       kind: cisco_xrd
+      startup-config: startup-configs/router01.conf
     router02:
       kind: cisco_xrd
+      startup-config: startup-configs/router02.conf
     router03:
       kind: cisco_xrd
+      startup-config: startup-configs/router03.conf
     router04:
       kind: cisco_xrd
+      startup-config: startup-configs/router04.conf
     router05:
       kind: cisco_xrd
+      startup-config: startup-configs/router05.conf
     router06:
       kind: cisco_xrd
+      startup-config: startup-configs/router06.conf
     router07:
       kind: cisco_xrd
+      startup-config: startup-configs/router07.conf
     host01:
       kind: linux
       exec:
