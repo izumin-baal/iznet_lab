@@ -1,4 +1,4 @@
-name: iosxr-basic
+name: iosxr-ospf-basic
 prefix: ""
 
 # Set IOSXR_IMAGE in your environment (or .env) to use your own registry.
