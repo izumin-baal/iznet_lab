@@ -9,16 +9,6 @@
 source scripts/run-with-env.sh
 ```
 
-### .bashrc への追記（任意）
-
-毎回手動で読み込むのが面倒な場合は、`~/.bashrc` に追記して自動読み込みできます。  
-どのディレクトリでも常に読み込まれるため、必要に応じて使い分けてください。
-
-```bash
-# iznet_lab の環境変数を常に読み込む
-source /home/izumin/iznet_lab/scripts/run-with-env.sh
-```
-
 3) 目的のラボのディレクトリに移動して起動します。`clab-*` がそのディレクトリ配下に作られるため、各ディレクトリで実行する運用にします。`sudo` を使うのが基本なので、`sudo -E` で環境変数を引き継ぎます。
 
 ```bash
