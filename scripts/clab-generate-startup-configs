@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import difflib
 import glob
 import os
 import shutil
@@ -74,11 +75,18 @@ def main():
         help="Save timestamp or directory name (default: latest)",
     )
     parser.add_argument(
-        "--yes",
+        "--update-topo",
         action="store_true",
-        help="Auto-create startup-config path when missing",
+        help="Prompt to update startup-config in clab.yml when missing",
+    )
+    parser.add_argument(
+        "--yes-update",
+        action="store_true",
+        help="Auto-update clab.yml when missing startup-config (implies --update-topo)",
     )
     args = parser.parse_args()
+    if args.yes_update:
+        args.update_topo = True
 
     topo_path = pick_topo_path(args.topo)
     topo_dir = os.path.dirname(topo_path)
@@ -89,29 +97,30 @@ def main():
     snapshot_dir = pick_snapshot_dir(save_dir, args.snapshot)
 
     failures = []
+    modified = False
     for node, info in nodes.items():
+        kind = info.get("kind")
+        if kind in {"bridge", "linux"}:
+            print(f"[skip] {node}: kind '{kind}'")
+            continue
         startup = info.get("startup-config")
         if not startup:
             default_startup = os.path.join(
                 args.default_startup_dir, f"{node}.conf"
             )
-            if args.yes:
-                startup = default_startup
-            elif sys.stdin.isatty():
-                answer = input(
-                    f"[prompt] {node}: startup-config not set. "
-                    f"Create {default_startup}? [y/N] "
-                ).strip().lower()
-                if answer in {"y", "yes"}:
-                    startup = default_startup
-                else:
-                    print(f"[skip] {node}: startup-config not set", file=sys.stderr)
-                    failures.append(node)
-                    continue
-            else:
-                print(f"[error] {node}: startup-config not set", file=sys.stderr)
-                failures.append(node)
-                continue
+            startup = default_startup
+            if args.update_topo:
+                if args.yes_update:
+                    info["startup-config"] = default_startup
+                    modified = True
+                elif sys.stdin.isatty():
+                    answer = input(
+                        f"[prompt] {node}: startup-config not set. "
+                        f"Update clab.yml to {default_startup}? [y/N] "
+                    ).strip().lower()
+                    if answer in {"y", "yes"}:
+                        info["startup-config"] = default_startup
+                        modified = True
 
         src = os.path.join(snapshot_dir, f"{node}-conf.txt")
         if not os.path.exists(src):
@@ -121,8 +130,25 @@ def main():
 
         dst = resolve_startup_path(topo_dir, startup)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.exists(dst):
+            with open(src, "r", encoding="utf-8") as f:
+                src_text = f.read()
+            with open(dst, "r", encoding="utf-8") as f:
+                dst_text = f.read()
+            if src_text != dst_text:
+                diff = difflib.unified_diff(
+                    dst_text.splitlines(keepends=True),
+                    src_text.splitlines(keepends=True),
+                    fromfile=os.path.relpath(dst, topo_dir),
+                    tofile=os.path.relpath(src, topo_dir),
+                )
+                sys.stderr.writelines(diff)
         shutil.copyfile(src, dst)
         print(f"[ok] {node} -> {dst}")
+
+    if modified:
+        with open(topo_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, sort_keys=False)
 
     if failures:
         print(f"[done] failures: {', '.join(failures)}", file=sys.stderr)

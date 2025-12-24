@@ -5,7 +5,6 @@ usage() {
   cat <<'USAGE' >&2
 usage:
   clab-bridge-delete [bridge-name]
-  clab-bridge-delete -f <clab.yml>
 USAGE
 }
 
@@ -49,41 +48,9 @@ pick_clab_file() {
     echo "no *.clab.yml found in current directory" >&2
     return 2
   fi
-  echo "multiple *.clab.yml found; use -f" >&2
+  echo "multiple *.clab.yml found; run in the target lab directory" >&2
   return 2
 }
-
-CLAB_FILE=""
-
-while getopts ":f:h" opt; do
-  case "${opt}" in
-    f) CLAB_FILE="${OPTARG}" ;;
-    h) usage; exit 0 ;;
-    \?) echo "invalid option: -${OPTARG}" >&2; usage; exit 2 ;;
-    :) echo "option -${OPTARG} requires an argument" >&2; usage; exit 2 ;;
-  esac
-done
-shift $((OPTIND - 1))
-
-if [[ -n "${CLAB_FILE}" ]]; then
-  if [[ $# -ne 0 ]]; then
-    usage
-    exit 2
-  fi
-  if [[ ! -f "${CLAB_FILE}" ]]; then
-    echo "clab file not found: ${CLAB_FILE}" >&2
-    exit 2
-  fi
-  mapfile -t bridges < <(extract_bridges "${CLAB_FILE}")
-  if [[ ${#bridges[@]} -eq 0 ]]; then
-    echo "no bridge nodes found in ${CLAB_FILE}"
-    exit 0
-  fi
-  for br in "${bridges[@]}"; do
-    delete_bridge "${br}"
-  done
-  exit 0
-fi
 
 if [[ $# -eq 0 ]]; then
   CLAB_FILE="$(pick_clab_file)"

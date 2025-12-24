@@ -109,7 +109,10 @@ clab-fetch-configs --topo example.clab.yml
 ## Startup-config の生成
 
 `clab-generate-startup-configs` は `save/save-YYYYMMDDHHMMSS/` にある保存済みコンフィグから、
-`startup-config` で参照するファイルを生成します。
+`startup-config` で参照するファイルを生成します。`startup-config` が未設定でも
+`startup-configs/<node>.conf` を生成して反映します。
+`kind: linux` と `kind: bridge` は自動的にスキップします。
+既存の `startup-config` と保存済みコンフィグが一致しない場合は差分を表示します。
 
 ### 使い方
 
@@ -126,11 +129,16 @@ clab-generate-startup-configs --snapshot 20251224231625
 clab-generate-startup-configs --snapshot save-20251224231625
 ```
 
-`startup-config` が未設定のノードがある場合は、確認して `startup-configs/<node>.conf` を作成できます。
-自動作成したい場合は `--yes` を指定します。
+`startup-config` を `clab.yml` に追記したい場合は `--update-topo` を使います。
 
 ```bash
-clab-generate-startup-configs --yes
+clab-generate-startup-configs --update-topo
+```
+
+`--yes-update` を指定すると確認なしで `clab.yml` を更新します。
+
+```bash
+clab-generate-startup-configs --yes-update
 ```
 
 ## インターフェース Description 命名規則

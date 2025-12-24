@@ -88,19 +88,6 @@ def build_ssh_args(args):
     return ssh_args
 
 
-def load_host_map(path):
-    if not path:
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        if path.endswith(".json"):
-            data = json.load(f)
-        else:
-            data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError("host map must be a mapping of node name to IP")
-    return data
-
-
 def pick_credentials(kind, args):
     default_user, default_pass = KIND_DEFAULTS.get(kind, (None, None))
     user = args.user or default_user
@@ -154,10 +141,6 @@ def main():
         default="save",
         help="Output base dir (relative to the topo directory)",
     )
-    parser.add_argument(
-        "--host-map",
-        help="YAML/JSON mapping of node name to management IP",
-    )
     parser.add_argument("--user", help="Default SSH user (override defaults)")
     parser.add_argument("--password", help="Default SSH password (override defaults)")
     parser.add_argument(
@@ -192,7 +175,6 @@ def main():
     data = load_topology(topo_path)
 
     nodes = data["topology"]["nodes"]
-    host_map = load_host_map(args.host_map)
     ssh_args = build_ssh_args(args)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -206,7 +188,7 @@ def main():
             print(f"[skip] {node}: unsupported kind '{kind}'", file=sys.stderr)
             continue
 
-        target_host = host_map.get(node, node)
+        target_host = node
 
         user, password = pick_credentials(kind, args)
         if not user:
